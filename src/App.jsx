@@ -64,8 +64,11 @@ function Badge({ color, children }) {
   )
 }
 
-// ─── PAGE AUTO-SCAN : charge Firebase directement, sans dépendre du state parent ──
-function AutoScanPage({ code, simDay, simSlot }) {
+// ─── PAGE AUTO-SCAN ───────────────────────────────────────────────────────────
+// ⚠️ CONFIGUREZ ICI LA DATE DE DÉBUT DE VOTRE ÉVÉNEMENT
+const EVENT_START_DATE = new Date('2026-03-01') // ← Changez cette date
+
+function AutoScanPage({ code }) {
   const [result, setResult] = useState(null)
   const [status, setStatus] = useState('Connexion à Firebase...')
 
@@ -76,71 +79,84 @@ function AutoScanPage({ code, simDay, simSlot }) {
     }
 
     async function validate() {
-  try {
-    // Vérifie l'heure actuelle
-    const now = new Date()
-    const h   = now.getHours() + now.getMinutes() / 60
-    const activeSlot = MEAL_SLOTS.find(s => h >= s.start && h < s.end)
+      try {
+        // 1. Vérifie l heure actuelle → trouve le créneau actif
+        const now = new Date()
+        const h   = now.getHours() + now.getMinutes() / 60
+        const activeSlot = MEAL_SLOTS.find(s => h >= s.start && h < s.end)
 
-    if (!activeSlot) {
-      const prochainSlot = MEAL_SLOTS.find(s => h < s.start)
-      setResult({
-        ok: false, color: '#F59E0B',
-        msg: '⏰ HORS HORAIRE',
-        detail: 'Aucun repas en cours actuellement.',
-        sub: prochainSlot
-          ? `Prochain repas : ${prochainSlot.icon} ${prochainSlot.label} à ${prochainSlot.start}h00`
-          : 'Service terminé pour aujourd\'hui.',
-      })
-      return
+        if (!activeSlot) {
+          const prochainSlot = MEAL_SLOTS.find(s => h < s.start)
+          setResult({
+            ok: false, color: '#F59E0B',
+            msg: '⏰ HORS HORAIRE',
+            detail: 'Aucun repas en cours.',
+            sub: prochainSlot
+              ? `Prochain : ${prochainSlot.icon} ${prochainSlot.label} à ${prochainSlot.start}h00`
+              : 'Service terminé pour aujourd\'hui.',
+          })
+          return
+        }
+
+        // 2. Calcule le jour automatiquement depuis la date de début
+        const diffMs   = now.setHours(0,0,0,0) - EVENT_START_DATE.setHours(0,0,0,0)
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+        
+        if (diffDays < 0 || diffDays >= EVENT_DAYS.length) {
+          setResult({
+            ok: false, color: '#F59E0B',
+            msg: '📅 HORS ÉVÉNEMENT',
+            detail: 'Ce QR code n\'est valable que pendant les jours de l\'événement.',
+            sub: `Événement : ${EVENT_DAYS.length} jours à partir du ${EVENT_START_DATE.toLocaleDateString('fr-FR')}`,
+          })
+          return
+        }
+
+        const dayIndex = diffDays
+
+        // 3. Charge Firebase
+        setStatus('Chargement des données...')
+        const snapP  = await get(ref(db, 'participants'))
+        const snapSc = await get(ref(db, 'scans'))
+
+        const participants = snapP.exists() ? Object.values(snapP.val()) : []
+        const scans        = snapSc.exists() ? snapSc.val() : {}
+
+        // 4. Trouve le participant
+        setStatus('Vérification...')
+        const p = participants.find(x => x.qrCode === code)
+        if (!p) {
+          setResult({ ok: false, color: '#EF4444', msg: '❌ QR invalide', detail: 'Code non reconnu dans le système.' })
+          return
+        }
+
+        // 5. Vérifie si déjà scanné pour ce créneau + ce jour
+        const key = getScanKey(p.id, dayIndex, activeSlot.id)
+        if (scans[key]) {
+          setResult({
+            ok: false, color: '#EF4444',
+            msg: '⛔ REFUSÉ',
+            detail: p.name,
+            sub: `${activeSlot.icon} ${activeSlot.label} — Jour ${dayIndex + 1} déjà servi`,
+          })
+        } else {
+          // 6. Enregistre le scan
+          await set(ref(db, `scans/${key}`), {
+            participant: { name: p.name, id: p.id },
+            day: dayIndex, slot: activeSlot.id,
+            time: new Date().toISOString()
+          })
+          setResult({
+            ok: true, color: '#10B981',
+            msg: '✅ VALIDÉ',
+            detail: p.name,
+            sub: `${activeSlot.icon} ${activeSlot.label} — Jour ${dayIndex + 1}`,
+          })
+        }
+      } catch (err) {
+        setResult({ ok: false, color: '#EF4444', msg: '⚠️ Erreur', detail: 'Vérifiez votre connexion internet.' })
+      }
     }
-
-    setStatus('Chargement des participants...')
-    const snapP  = await get(ref(db, 'participants'))
-    const snapSc = await get(ref(db, 'scans'))
-
-    const participants = snapP.exists() ? Object.values(snapP.val()) : []
-    const scans        = snapSc.exists() ? snapSc.val() : {}
-
-    setStatus('Vérification du code...')
-    const p = participants.find(x => x.qrCode === code)
-
-    if (!p) {
-      setResult({ ok: false, color: '#EF4444', msg: '❌ QR invalide', detail: 'Code non reconnu.' })
-      return
-    }
-
-    // Calcule le jour de l'événement automatiquement
-    const eventStartDate = new Date('2026-03-01') // ← METTEZ LA DATE DE DÉBUT DE L'ÉVÉNEMENT
-    const diffDays = Math.floor((now - eventStartDate) / (1000 * 60 * 60 * 24))
-    const dayIndex = Math.max(0, Math.min(diffDays, EVENT_DAYS.length - 1))
-
-    const key = getScanKey(p.id, dayIndex, activeSlot.id)
-
-    if (scans[key]) {
-      setResult({
-        ok: false, color: '#EF4444',
-        msg: '⛔ REFUSÉ',
-        detail: p.name,
-        sub: `${activeSlot.icon} ${activeSlot.label} — Jour ${dayIndex + 1} déjà servi`,
-      })
-    } else {
-      await set(ref(db, `scans/${key}`), {
-        participant: { name: p.name, id: p.id },
-        day: dayIndex, slot: activeSlot.id,
-        time: now.toISOString()
-      })
-      setResult({
-        ok: true, color: '#10B981',
-        msg: '✅ VALIDÉ',
-        detail: p.name,
-        sub: `${activeSlot.icon} ${activeSlot.label} — Jour ${dayIndex + 1}`,
-      })
-    }
-  } catch (err) {
-    setResult({ ok: false, color: '#EF4444', msg: '⚠️ Erreur', detail: 'Vérifiez votre connexion.' })
-  }
-}
 
     validate()
   }, [])
@@ -574,7 +590,7 @@ export default function App() {
     return (
       <>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700;900&display=swap')`}</style>
-        <AutoScanPage code={scanCode} simDay={simDay} simSlot={simSlot} />
+        <AutoScanPage code={scanCode} />
       </>
     )
   }
