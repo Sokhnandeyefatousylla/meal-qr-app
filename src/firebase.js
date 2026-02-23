@@ -1,19 +1,22 @@
-// ⚠️  REMPLISSEZ VOS INFORMATIONS FIREBASE ICI
-// Créez un projet sur https://console.firebase.google.com
-// Puis allez dans : Paramètres du projet → Vos applications → Config
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
 
-import { initializeApp } from 'firebase/app'
-import { getDatabase } from 'firebase/database'
-
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "VOTRE_API_KEY",
-  authDomain: "VOTRE_PROJECT.firebaseapp.com",
-  databaseURL: "https://VOTRE_PROJECT-default-rtdb.firebaseio.com",
-  projectId: "VOTRE_PROJECT_ID",
-  storageBucket: "VOTRE_PROJECT.appspot.com",
-  messagingSenderId: "VOTRE_SENDER_ID",
-  appId: "VOTRE_APP_ID"
-}
+  apiKey: "AIzaSyBi4FN2WTHcugYxWkHakKjBVoZnxcXNslw",
+  authDomain: "repas-ceremonie.firebaseapp.com",
+  databaseURL: "https://repas-ceremonie-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "repas-ceremonie",
+  storageBucket: "repas-ceremonie.firebasestorage.app",
+  messagingSenderId: "910676974946",
+  appId: "1:910676974946:web:2c35f9b4c57466e85ea03b",
+  measurementId: "G-Q031939D3F"
+};
 
-const app = initializeApp(firebaseConfig)
-export const db = getDatabase(app)
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
